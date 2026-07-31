@@ -1,0 +1,24 @@
+Section 1: django-silk / query-count evidence
+================================================
+
+Reproduced with: docker compose run --rm web python manage.py query_count_demo
+(seeds 200 orders for one tenant, serializes them through both the
+pre-fix and post-fix queryset, counts SQL queries with
+django.test.utils.CaptureQueriesContext)
+
+Orders for tenant 'query-demo': 200
+BEFORE fix, Order.objects.all(), no select_related: 201 queries
+AFTER fix,  select_related('customer'):              1 query
+
+201 = 1 query to fetch the 200 orders + 200 queries, one per order, for
+      OrderSummarySerializer.get_customer_email()'s obj.customer.email access.
+  1 = the customer JOIN is folded into the original query by
+      select_related("customer"). Query count is now independent of order
+      count (see orders/tests/test_n_plus_one.py, which asserts this for
+      both 25 and 200+ orders).
+
+Automated, reproducible version of what django-silk shows interactively:
+run `docker compose up`, open http://localhost:8080/silk/, hit GET
+/api/orders/summary/ with header `X-Tenant-ID: <tenant id>`, and the
+request's "Num queries" column shows 1 (post-fix). Silk is wired in via
+SilkyMiddleware in config/settings.py and mounted at /silk/ in config/urls.py.
